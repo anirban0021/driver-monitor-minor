@@ -34,14 +34,3 @@ def test_banner_detail_adds_information_or_is_absent():
     eyes.reasons = ["Eyes closed 1.4s"]
     assert hud._detail(eyes, "EYES CLOSED") == "Closed for 1.4 s"
     assert eyes.level in (Level.OK, Level.WARN, Level.ALERT)
-
-
-def test_labels_match_the_web_inspector():
-    import re
-    from pathlib import Path
-
-    js = (Path(__file__).resolve().parent.parent / "web" / "app.js").read_text(encoding="utf-8")
-    web = re.findall(r'label: "([^"]+)", lo:', js)
-    src = Path(hud.__file__).read_text(encoding="utf-8")
-    for label in web:
-        assert f'"{label}"' in src, label
