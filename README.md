@@ -1,8 +1,6 @@
 # Driver Monitor
 
-Real-time driver drowsiness and distraction detection from a single webcam, built with Python, OpenCV and MediaPipe.
-
-It tracks 478 facial landmarks and 52 facial blendshapes per frame, detects phones and hands in parallel, and reasons about all of it over time. That separates a normal blink from a microsleep, talking from yawning, and a mirror check from eyes off the road.
+> **About this repository.** Minor project by **Group 19** (Anirban Sasmal, Agniva Gorai, Abhishek Ghosh, Krishna Dutta, Mir MD Kaif), B.Tech CSE, Swami Vivekananda University. It is a fork of [driver-monitor](https://github.com/iice257/driver-monitor) by Kingsley Aremu (MIT), starting from commit `8c12c05` (tag `base-v0`). Planned changes: a Random Forest classifier, CLAHE low-light handling, Normal/Warning/Critical alert tiers, and evaluation on our own clips. See `CONTRIBUTIONS.md` and `THIRD_PARTY_NOTICES.md`. Not a certified safety system.
 
 ## What it detects
 
