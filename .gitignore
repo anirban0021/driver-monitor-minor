@@ -11,3 +11,7 @@ models/*.pt
 !samples/*.mp4
 !web/demo/*.mp4
 *.egg-info/
+
+# Saved driver faces are biometric data: never commit them
+data/
+*.db

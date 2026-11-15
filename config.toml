@@ -44,8 +44,17 @@ distraction_s = 2.0
 no_face_s = 2.0             # driver not visible: WARN
 no_face_alert_s = 5.0       # ... then ALERT
 
+[profiles]                  # per-driver face recognition
+identify_s = 2.0            # seconds of clear frontal frames needed to look the driver up
+enroll_s = 10.0             # seconds a new driver's face is scanned before it is saved
+match_threshold = 0.05      # max face-shape distance to count as the same driver (raise if the same person keeps being enrolled again)
+match_margin = 0.015        # best match must beat the runner-up by this much (raise if the wrong driver is picked)
+id_pose_deg = 20.0          # only frames with the head within this many degrees count ...
+id_jaw_max = 0.25           # ... mouth (nearly) closed ...
+id_blink_max = 0.5          # ... eyes open
+
 [phone]
-phone_s = 1.0               # phone near the face this long -> ALERT
+phone_s = 1.0              # phone near the face this long -> ALERT
 phone_down_s = 1.0          # phone in view while looking down -> ALERT
 hand_at_ear_s = 2.0         # hand held at the ear -> "Phone call"
 phone_grace_s = 0.6

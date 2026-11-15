@@ -79,6 +79,15 @@ class Config:
     hand_at_ear_s: float = 2.0
     phone_grace_s: float = 0.6       # tolerate detector dropouts this long
 
+    # Driver recognition (profiles.py)
+    identify_s: float = 2.0          # seconds of clear frontal frames needed to look the driver up
+    enroll_s: float = 10.0           # seconds a new driver's face is scanned before it is saved
+    match_threshold: float = 0.05    # max signature distance (in eye-corner widths) to count as the same driver
+    match_margin: float = 0.015      # the best match must beat the runner-up by this much
+    id_pose_deg: float = 20.0        # frames count for identification only with the head within this many degrees ...
+    id_jaw_max: float = 0.25         # ... the mouth (nearly) closed ...
+    id_blink_max: float = 0.5        # ... and the eyes open
+
     @classmethod
     def load(cls, path: Path | None) -> Config:
         if path is None or not Path(path).exists():
@@ -191,6 +200,19 @@ class DriverState:
 
     def recalibrate(self) -> None:
         self.__post_init__()
+
+    def baseline(self) -> dict[str, float] | None:
+        """The personal baseline learned so far (None while still calibrating), ready to save to a driver profile."""
+        if self.baseline_ear is None:
+            return None
+        return {"ear": self.baseline_ear, "pitch": self.baseline_pitch, "yaw": self.baseline_yaw, "gaze": self.baseline_gaze}
+
+    def load_baseline(self, ear: float, pitch: float, yaw: float, gaze: float) -> None:
+        """Adopt a saved baseline (a recognised driver) instead of learning one: calibration ends immediately."""
+        self.baseline_ear, self.baseline_pitch, self.baseline_yaw, self.baseline_gaze = ear, pitch, yaw, gaze
+        self._calib.clear()
+        self._calib_good = 0.0
+        self._calib_hint = None
 
     def _calib_problem(self, f: Frame) -> str | None:
         """Why this frame can't teach us what an attentive driver looks like, or None if it can."""

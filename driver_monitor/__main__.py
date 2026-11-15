@@ -15,6 +15,7 @@ from . import hud
 from .alarm import Alarm
 from .detector import DEFAULT_MODEL, FaceTracker
 from .phone import NullWatcher, PhoneWatcher, hand_at_ear, phone_near_face
+from .profiles import DEFAULT_DB, Identifier, ProfileStore, identity_signature
 from .state import Config, DriverState, Frame, Level
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config.toml"
@@ -33,6 +34,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--record", type=Path, help="write the annotated video (H.264, with the spoken alerts mixed in) to this .mp4; needs ffmpeg")
     p.add_argument("--log", type=Path, help="append state changes as JSON lines to this file")
     p.add_argument("--mirror", action="store_true", help="flip webcam horizontally for display")
+    p.add_argument("--db", type=Path, default=DEFAULT_DB, help="driver database (default: data/drivers.db)")
+    p.add_argument("--name", help="name for a new driver when one is enrolled (default: Driver N)")
+    p.add_argument("--no-recognition", action="store_true", help="skip driver recognition and always calibrate from scratch")
     p.add_argument("--recalibrate-at", default="", metavar="T1,T2",
                    help="seconds at which to recalibrate, e.g. the cuts in a spliced test reel")
     return p.parse_args()
@@ -64,6 +68,9 @@ def main() -> None:
     cfg = Config.load(args.config)
     state = DriverState(cfg)
     alarm = Alarm(enabled=not args.no_alarm and not args.headless, voice=not args.beep)
+    store = None if args.no_recognition else ProfileStore(args.db)
+    ident = None if store is None else Identifier(store, cfg, name=args.name)
+    who = None
     watcher = NullWatcher() if args.phone == "off" else PhoneWatcher(args.phone)
     writer = None
     log = args.log.open("a", encoding="utf-8") if args.log else None
@@ -108,6 +115,18 @@ def main() -> None:
                         f.phone_near_face = phone_near_face(phone.phones, face.box)
                         f.hand_at_ear = any(hand_at_ear(hd, face.box) for hd in phone.hands)
                 status = state.update(f)
+
+                if ident is not None:
+                    sig, hint = identity_signature(face, cfg)
+                    who = ident.update(t, sig, hint, state.baseline())
+                    if who.event == "recognized" and who.driver.baseline:
+                        state.load_baseline(**who.driver.baseline)   # reuse the saved normal face: no calibration needed
+                    if who.event:
+                        msg = (f"Welcome back, {who.driver.name}" if who.event == "recognized" else f"New driver saved as {who.driver.name}")
+                        print(msg)
+                        if log:
+                            log.write(json.dumps({"t": round(t, 2), "level": "INFO", "reasons": [msg], "driver_id": who.driver.id,
+                                                  "distance": who.distance}) + "\n")
                 cue = alarm.update(status.reasons, t, urgent=status.level == Level.ALERT, yawns=status.yawns)
                 if cue is not None:
                     said.append((t, cue.phrase))
@@ -120,7 +139,7 @@ def main() -> None:
                 now = time.monotonic()
                 fps = 0.9 * fps + 0.1 * (1.0 / max(now - prev, 1e-6))
                 prev = now
-                hud.draw(frame, face, status, fps, phone if fresh else None, cfg, t, phone_off=bool(watcher.error))
+                hud.draw(frame, face, status, fps, phone if fresh else None, cfg, t, phone_off=bool(watcher.error), who=who)
 
                 if args.record:
                     if writer is None:
@@ -137,9 +156,13 @@ def main() -> None:
                     if k == ord("c"):
                         state.recalibrate()
                         alarm.reset()
+                        if ident is not None:
+                            ident.refresh_baseline()   # save the new baseline to this driver's profile
     finally:
         watcher.close()
         alarm.close()
+        if store is not None:
+            store.close()
         cap.release()
         if writer:
             writer.release()

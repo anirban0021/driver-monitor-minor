@@ -18,6 +18,7 @@ from . import metrics
 from .alerts import cue_for
 from .detector import FaceReading
 from .phone import PhoneResult
+from .profiles import IdentityStatus, Phase
 from .state import Level, Status
 
 AA = cv2.LINE_AA
@@ -266,6 +267,35 @@ def _calibration_note(img: np.ndarray, s: Status, k: float) -> None:
     draw_text(img, [(x0 + pad, y1 - round(26 * k), msg, px, MEDIUM, FG, "l")])
 
 
+def _identity_badge(img: np.ndarray, who: IdentityStatus, enroll_s: float, k: float) -> None:
+    """Top left: who the system thinks is driving, or the progress of scanning a new driver's face."""
+    if who.phase is Phase.READY and who.driver is not None:
+        title = who.driver.name
+        sub = "New profile saved" if who.is_new else "Recognized" + (f"  ·  match {who.distance:.3f}" if who.distance is not None else "")
+        bar = None
+    elif who.phase is Phase.ENROLLING:
+        title = "New driver"
+        sub = who.hint or f"Scanning your face  {who.progress * enroll_s:.0f} / {enroll_s:.0f} s"
+        bar = who.progress
+    else:
+        title, sub, bar = "Identifying driver", who.hint or "Look at the camera", None
+    tp, sp, pad = round(16 * k), round(13 * k), round(16 * k)
+    bw = int(pad * 2 + max(text_width(title, tp, SEMIBOLD), text_width(sub, sp, MEDIUM), round(170 * k)))
+    bh = round((70 if bar is not None else 62) * k)
+    x0, y0 = round(20 * k), round(20 * k)
+    _rounded_blend(img, x0, y0, x0 + bw, y0 + bh, round(12 * k), PANEL, 0.74)
+    items = [(x0 + pad, y0 + pad + round(12 * k), title, tp, SEMIBOLD, FG, "l"),
+             (x0 + pad, y0 + pad + round(12 * k) + sp + round(8 * k), sub, sp, MEDIUM, WARN if who.hint else FG2, "l")]
+    if bar is not None:
+        y = y0 + bh - round(12 * k)
+        w = max(2, round(3 * k))
+        cv2.line(img, (x0 + pad, y), (x0 + bw - pad, y), TRACK, w, AA)
+        fill = int((bw - 2 * pad) * float(np.clip(bar, 0, 1)))
+        if fill > 0:
+            cv2.line(img, (x0 + pad, y), (x0 + pad + fill, y), GOOD, w, AA)
+    draw_text(img, items)
+
+
 def _caption(img: np.ndarray, msg: str, k: float) -> None:
     """A small plain-text note, top left (used to say the demo compresses a time window)."""
     px, pad = round(14 * k), round(14 * k)
@@ -277,7 +307,7 @@ def _caption(img: np.ndarray, msg: str, k: float) -> None:
 
 def draw(img: np.ndarray, face: FaceReading | None, s: Status, fps: float,
          phone: PhoneResult | None = None, cfg=None, t: float = 0.0,
-         phone_off: bool = False, note: str | None = None) -> np.ndarray:
+         phone_off: bool = False, note: str | None = None, who: IdentityStatus | None = None) -> np.ndarray:
     from .state import Config
 
     cfg = cfg or Config()
@@ -298,6 +328,8 @@ def draw(img: np.ndarray, face: FaceReading | None, s: Status, fps: float,
         _alert_overlay(img, s, t, k)
     if s.calibrating and s.level == Level.OK:
         _calibration_note(img, s, k)
+    if who is not None:
+        _identity_badge(img, who, cfg.enroll_s, k)
     elif note:
         _caption(img, note, k)
     return img
