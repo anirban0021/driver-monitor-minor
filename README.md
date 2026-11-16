@@ -88,7 +88,8 @@ Each driver gets their own saved profile, so a returning driver is recognised st
 
 - **Known driver:** after about 2 s of clear frontal frames the face is looked up in `data/drivers.db`. On a match the HUD shows the name ("Recognized"), the console says "Welcome back", and that driver's saved baseline (open-eye EAR, neutral head pose, gaze) is loaded, so there is no calibration wait.
 - **New driver:** the face is scanned for 10 s, then saved with its baseline as a new driver (named `Driver N`, or whatever `--name` says).
-- **How a face is matched:** about 90 stable landmarks (jaw outline, brows, eyes, nose, lips) are moved into the face's own frame and divided by the distance between the outer eye corners, so distance from the camera and head tilt matter little. The result is a list of numbers, not a photo. A match needs a distance of at most `match_threshold` (0.05) and a lead over the runner-up of `match_margin` (0.015); both live under `[profiles]` in `config.toml`. Only clear frames count (head within 20°, eyes open, mouth closed).
+- **How a face is matched:** clear frames (head within 20°, eyes open, mouth closed) are aligned using five MediaPipe points (eye centres, nose tip, mouth corners) and passed through OpenCV's **SFace** network (`models/face_recognition_sface_2021dec.onnx`, fetched by `python -m driver_monitor.download_model`), which turns a face into 128 numbers. Two faces are the same driver when their cosine distance is at most `embed_threshold` (0.40) and they beat the runner-up by `embed_margin` (0.10); both live under `[profiles]` in `config.toml`. The result is a list of numbers, not a photo.
+- **Fallback:** without the SFace file, a weaker landmark-shape signature (`match_threshold`, `match_margin`) is used. It cannot reliably separate similar-looking people, so download the model. Drivers saved with one method are never compared with drivers saved with the other, so after switching, enroll again and `profiles delete` the old entry.
 - **Recalibrate:** press `c`; the new baseline is stored for that driver.
 
 ```bash
@@ -96,9 +97,10 @@ python -m driver_monitor.profiles list                    # all saved drivers
 python -m driver_monitor.profiles rename 1 "Anirban"
 python -m driver_monitor.profiles delete 2
 python -m driver_monitor.profiles compare                 # distances between every pair of drivers
+python -m driver_monitor.idcheck --root C:\Datasets\Own   # videos named 1-Normal.mp4, 2-Normal.mp4 ...: are people separable? suggests a threshold
 ```
 
-The face signature is biometric data. It stays on your machine in `data/drivers.db`, which is git-ignored: never commit it. This is a shape match for personalising thresholds, not an authentication system.
+The face embedding is biometric data. It stays on your machine in `data/drivers.db`, which is git-ignored: never commit it. This is a shape match for personalising thresholds, not an authentication system.
 
 ## Learned classifier (Random Forest)
 
@@ -198,7 +200,7 @@ web/                static browser demo (MediaPipe in the page), deployed on Ver
 - A single RGB camera struggles at night. An IR camera with IR illumination is the standard fix.
 - Heavy sunglasses hide the eyes, so EAR is unreliable. Head pose and yawning still work.
 - The stock COCO phone detector misses phones that are mostly hidden by a hand. A YOLO model fine-tuned on in-cabin images would do better.
-- Face recognition compares face shape only. Very different head angles, heavy occlusion or very similar faces can cause a miss or a wrong match; adjust `match_threshold` and `match_margin` in `config.toml`.
+- Face recognition is for personalising thresholds, not security. Strong side lighting, a large head turn, heavy occlusion or look-alike faces can cause a miss or a wrong match; check your own setup with `driver_monitor.idcheck` and adjust `embed_threshold` and `embed_margin` in `config.toml`.
 - The Random Forest was trained on acted yawning videos (YawDD), and its drowsy class still lacks data from enough people.
 - Roadmap: drowsy recordings from more people (or UTA-RLDD), CLAHE for low light, Normal/Warning/Critical tiers, a fine-tuned in-cabin detector (phone, cigarette, drinking), seatbelt check, and a Raspberry Pi / Jetson build.
 

@@ -49,6 +49,8 @@ identify_s = 2.0            # seconds of clear frontal frames needed to look the
 enroll_s = 10.0             # seconds a new driver's face is scanned before it is saved
 match_threshold = 0.05      # max face-shape distance to count as the same driver (raise if the same person keeps being enrolled again)
 match_margin = 0.015        # best match must beat the runner-up by this much (raise if the wrong driver is picked)
+embed_threshold = 0.40      # with the SFace face model: max cosine distance (1 - similarity) to count as the same driver; lower = stricter
+embed_margin = 0.10         # ... and the best match must beat the runner-up by this much
 id_pose_deg = 20.0          # only frames with the head within this many degrees count ...
 id_jaw_max = 0.25           # ... mouth (nearly) closed ...
 id_blink_max = 0.5          # ... eyes open

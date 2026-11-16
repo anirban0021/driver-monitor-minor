@@ -14,6 +14,7 @@ import cv2
 from . import hud
 from .alarm import Alarm
 from .detector import DEFAULT_MODEL, FaceTracker
+from .embedder import FaceEmbedder
 from .phone import NullWatcher, PhoneWatcher, hand_at_ear, phone_near_face
 from .profiles import DEFAULT_DB, Identifier, ProfileStore, identity_signature
 from .state import Config, DriverState, Frame, Level
@@ -72,6 +73,12 @@ def main() -> None:
     store = None if args.no_recognition else ProfileStore(args.db)
     ident = None if store is None else Identifier(store, cfg, name=args.name)
     who = None
+    embedder, embed_cache = None, (-1e9, None)     # (time of the last embedding, the embedding)
+    if ident is not None:
+        try:
+            embedder = FaceEmbedder()
+        except (FileNotFoundError, RuntimeError) as exc:
+            print(f"Face-recognition model not available ({exc}). Using the weaker landmark-shape matching.", file=sys.stderr)
     rf = None
     if args.rf:
         from .classifier import ModelAlert  # only needed (and imported) with --rf
@@ -124,6 +131,11 @@ def main() -> None:
 
                 if ident is not None:
                     sig, hint = identity_signature(face, cfg)
+                    if embedder is not None and sig is not None:      # a clear frame: describe the face with SFace instead
+                        if t - embed_cache[0] >= 0.1 or t < embed_cache[0]:
+                            embed_cache = (t, embedder.embed(frame, face.points))
+                        sig = embed_cache[1]
+                        hint = hint or ("Face the camera" if sig is None else None)
                     who = ident.update(t, sig, hint, state.baseline())
                     if who.event == "recognized" and who.driver.baseline:
                         state.load_baseline(**who.driver.baseline)   # reuse the saved normal face: no calibration needed

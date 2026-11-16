@@ -1,6 +1,8 @@
 """Per-driver recognition: who is behind the wheel, and what does their normal face look like?
 
-Three parts, all independent of the camera so they can be unit tested:
+Three parts, all independent of the camera so they can be unit tested. A driver is described either by an
+SFace embedding (``embedder.py``, preferred: it is trained to tell people apart) or, when that model
+is not downloaded, by the landmark-shape ``face_signature`` below, which separates people far less reliably:
 
 * ``face_signature``  turns the 478 FaceLandmarker points into a pose- and scale-free vector
   that describes the *shape* of the face (eyes, brows, nose, mouth, jaw line).
@@ -30,6 +32,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from . import metrics
+from .embedder import EMBED_DIM, cosine_distance
 
 if TYPE_CHECKING:
     from .detector import FaceReading
@@ -94,8 +97,19 @@ def face_signature(points: np.ndarray) -> np.ndarray | None:
 
 
 def signature_distance(a: np.ndarray, b: np.ndarray) -> float:
-    """RMS gap per landmark, in units of the distance between the eyes' outer corners."""
+    """Distance between two stored faces of the same kind.
+
+    Landmark signatures: RMS gap per landmark, in units of the distance between the eyes' outer corners.
+    SFace embeddings (128 numbers): cosine distance, 1 minus the similarity.
+    """
+    if len(a) == EMBED_DIM:
+        return cosine_distance(a, b)
     return float(np.linalg.norm(a - b) / math.sqrt(len(a) / 3))
+
+
+def thresholds_for(sig: np.ndarray, cfg: Config) -> tuple[float, float]:
+    """(match_threshold, match_margin) that fit this kind of signature."""
+    return (cfg.embed_threshold, cfg.embed_margin) if len(sig) == EMBED_DIM else (cfg.match_threshold, cfg.match_margin)
 
 
 def identity_signature(face: FaceReading | None, cfg: Config) -> tuple[np.ndarray | None, str | None]:
@@ -168,7 +182,7 @@ class ProfileStore:
         ).fetchall()
         for id_, name, blob, ear, pitch, yaw, gaze, visits, created, seen in rows:
             sig = np.frombuffer(blob, dtype=np.float32).astype(float)
-            if sig.size != SIGNATURE_DIM:
+            if sig.size not in (SIGNATURE_DIM, EMBED_DIM):
                 print(f"Skipping driver {id_} ({name}): saved with a different signature layout", file=sys.stderr)
                 continue
             base = None if ear is None else {"ear": ear, "pitch": pitch, "yaw": yaw, "gaze": gaze}
@@ -233,6 +247,7 @@ class Match:
 
 def best_match(probe: np.ndarray, drivers: list[Driver], threshold: float, margin: float) -> Match:
     """Closest saved driver, accepted only if it is close enough and clearly closer than the next one."""
+    drivers = [d for d in drivers if len(d.signature) == len(probe)]     # only compare like with like
     if not drivers:
         return Match(None, math.inf)
     ranked = sorted(((signature_distance(probe, d.signature), d) for d in drivers), key=lambda x: x[0])
@@ -304,7 +319,8 @@ class Identifier:
             self._good += dt
 
         if self.phase is Phase.SCANNING and self._good >= cfg.identify_s and len(self._sigs) >= 10:
-            m = best_match(np.median(np.stack(self._sigs), axis=0), self.store.drivers(), cfg.match_threshold, cfg.match_margin)
+            template = np.median(np.stack(self._sigs), axis=0)
+            m = best_match(template, self.store.drivers(), *thresholds_for(template, cfg))
             self.distance = None if math.isinf(m.distance) else m.distance
             if m.driver is not None:
                 self.phase, self.driver, self.is_new, event = Phase.READY, m.driver, False, "recognized"
@@ -336,7 +352,7 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("name")
     d = sub.add_parser("delete", help="delete a driver and their face data")
     d.add_argument("id", type=int)
-    sub.add_parser("compare", help="distance between every pair of saved drivers (for tuning match_threshold)")
+    sub.add_parser("compare", help="distance between every pair of saved drivers (for tuning the match thresholds)")
     args = p.parse_args(argv)
 
     with ProfileStore(args.db) as store:
@@ -356,6 +372,9 @@ def main(argv: list[str] | None = None) -> None:
                 print("Need at least two saved drivers.")
             for i, a in enumerate(drivers):
                 for b in drivers[i + 1:]:
+                    if len(a.signature) != len(b.signature):
+                        print(f"{a.name} <-> {b.name}: saved with different recognition methods, cannot compare")
+                        continue
                     print(f"{a.name} <-> {b.name}: {signature_distance(a.signature, b.signature):.4f}")
 
 

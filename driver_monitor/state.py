@@ -84,6 +84,8 @@ class Config:
     enroll_s: float = 10.0           # seconds a new driver's face is scanned before it is saved
     match_threshold: float = 0.05    # max signature distance (in eye-corner widths) to count as the same driver
     match_margin: float = 0.015      # the best match must beat the runner-up by this much
+    embed_threshold: float = 0.40    # face-embedding (SFace) cosine distance at most this = same driver (lower = stricter)
+    embed_margin: float = 0.10        # the best embedding match must beat the runner-up by this much
     id_pose_deg: float = 20.0        # frames count for identification only with the head within this many degrees ...
     id_jaw_max: float = 0.25         # ... the mouth (nearly) closed ...
     id_blink_max: float = 0.5        # ... and the eyes open
