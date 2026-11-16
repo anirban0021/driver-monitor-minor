@@ -117,19 +117,19 @@ Our own clips go in the same way: name them `<n>-Normal.mp4`, `<n>-Yawning.mp4`,
 
 The model can only add a WARN ("Yawn: model 91%", "Fatigue: model 87%"); the rule-based ALERTs stay the safety layer. `train` also scores the app's own thresholds on the same windows, so the two can be compared in the report. Saved models are Python pickles: only load files you trained yourself.
 
-### Results so far (YawDD, 90 people, 1473 windows)
+### Results so far (YawDD plus our own clips: 316 videos, 93 people, 1548 windows)
 
-Evaluation holds out whole people, so every score is on drivers the model never saw.
+Evaluation holds out whole people, so every score is on drivers the model never saw. Windows: alert 1108, yawning 410, drowsy 30.
 
-| | Accuracy | Macro-F1 | Yawning recall |
-|---|---|---|---|
-| Always "alert" | 0.738 | | |
-| App's rules | 0.857 | 0.783 | 0.49 |
-| Random Forest | 0.907 | 0.872 | 0.74 |
+| | Accuracy | Macro-F1 | Yawning recall | Drowsy recall |
+|---|---|---|---|---|
+| Always "alert" | 0.716 | | 0.00 | 0.00 |
+| App's rules | 0.855 | 0.757 | 0.50 | 0.80 |
+| Random Forest | 0.910 | 0.896 | 0.75 | 0.87 |
 
 The forest finds more yawns than the fixed thresholds. Some of the remaining misses are label noise: a yawning video also contains seconds without a yawn.
 
-**Drowsy is not evaluated yet.** YawDD has no drowsy videos, and with our own drowsy clips from a single person the held-out score for that class is meaningless (0.00). It needs drowsy recordings from at least 3 to 5 people, or UTA-RLDD.
+**The drowsy numbers are indicative only.** YawDD has no drowsy videos; all 30 drowsy windows come from our own acted clips of 3 people, so 26 against 24 correct windows is not a meaningful difference. It needs drowsy recordings from more people, or UTA-RLDD. (YawDD alone, 90 people, 1473 windows: accuracy 0.907, macro-F1 0.872 for the forest against 0.857 and 0.783 for the rules.)
 
 ### Data and credit
 
@@ -176,7 +176,9 @@ driver_monitor/
   detector.py       MediaPipe FaceLandmarker wrapper (landmarks + blendshapes)
   phone.py          phone detector + hand landmarks on a background thread
   state.py          temporal logic, calibration, alert levels
-  profiles.py       per-driver face recognition and the driver database (SQLite)
+  profiles.py       per-driver profiles: the driver database (SQLite), matching and the enrolment flow
+  embedder.py       SFace face embeddings (128 numbers) used to recognise drivers
+  idcheck.py        checks on your own clips how well recognition separates people (suggests a threshold)
   features.py       window features shared by training and live use
   extract.py        dataset videos -> per-frame feature CSVs
   train.py          trains and scores the Random Forest
