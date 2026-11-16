@@ -1,6 +1,6 @@
 # Driver Monitor
 
-> **About this repository.** Minor project by **Group 19** (Anirban Sasmal, Agniva Gorai, Abhishek Ghosh, Krishna Dutta, Mir MD Kaif), B.Tech CSE, Swami Vivekananda University. It is a fork of [driver-monitor](https://github.com/iice257/driver-monitor) by Kingsley Aremu (MIT), starting from commit `8c12c05` (tag `base-v0`). Planned changes: a Random Forest classifier, CLAHE low-light handling, Normal/Warning/Critical alert tiers, and evaluation on our own clips. See `CONTRIBUTIONS.md` and `THIRD_PARTY_NOTICES.md`. Not a certified safety system.
+> **About this repository.** Minor project by **Group 19** (Anirban Sasmal, Agniva Gorai, Abhishek Ghosh, Krishna Dutta, Mir MD Kaif), B.Tech CSE, Swami Vivekananda University. It is a fork of [driver-monitor](https://github.com/iice257/driver-monitor) by Kingsley Aremu (MIT), starting from commit `8c12c05` (tag `base-v0`). Our changes so far: per-driver face recognition with a driver database, and a Random Forest classifier trained on YawDD (see below). Still planned: CLAHE low-light handling, Normal/Warning/Critical alert tiers, and drowsy recordings from more people. See `CONTRIBUTIONS.md` and `THIRD_PARTY_NOTICES.md`. Not a certified safety system.
 
 ## What it detects
 
@@ -63,6 +63,10 @@ python -m driver_monitor --source drive.mp4 --headless --log events.jsonl
 python -m driver_monitor --record out.mp4              # annotated video as H.264 with the spoken alerts mixed in (needs ffmpeg)
 python -m driver_monitor --no-alarm --mirror
 python -m driver_monitor --beep                        # beeps instead of spoken alerts
+python -m driver_monitor --name Anirban                # name given to a new driver when one is enrolled
+python -m driver_monitor --db data/drivers.db          # driver database (this is the default)
+python -m driver_monitor --no-recognition              # skip face recognition, calibrate from scratch every run
+python -m driver_monitor --rf models/drowsiness_rf.pkl # add the trained Random Forest (see below)
 python -m driver_monitor --phone yolo                  # YOLO phone detector (pip install ultralytics, AGPL-3.0)
 python -m driver_monitor --phone off                   # face only, lightest
 python -m driver_monitor --config night.toml           # alternative thresholds
@@ -78,18 +82,56 @@ The HUD shows each live signal with its threshold marker. Watch where your value
 
 `--log` writes one JSON line per state change, for example `{"t": 42.1, "level": "ALERT", "reasons": ["Eyes closed 1.3s"]}`.
 
-## Learned classifier (Random Forest)
+## Driver recognition (per-driver profiles)
 
-Besides the rule-based alerts, a Random Forest can be trained on public datasets (YawDD, UTA-RLDD) or your own recordings. It looks at 8-second windows of EAR, MAR, jaw opening and head pose, and its eye openness is relative to each driver's own baseline.
+Each driver gets their own saved profile, so a returning driver is recognised straight away and judged against their own normal face, not a generic one.
+
+- **Known driver:** after about 2 s of clear frontal frames the face is looked up in `data/drivers.db`. On a match the HUD shows the name ("Recognized"), the console says "Welcome back", and that driver's saved baseline (open-eye EAR, neutral head pose, gaze) is loaded, so there is no calibration wait.
+- **New driver:** the face is scanned for 10 s, then saved with its baseline as a new driver (named `Driver N`, or whatever `--name` says).
+- **How a face is matched:** about 90 stable landmarks (jaw outline, brows, eyes, nose, lips) are moved into the face's own frame and divided by the distance between the outer eye corners, so distance from the camera and head tilt matter little. The result is a list of numbers, not a photo. A match needs a distance of at most `match_threshold` (0.05) and a lead over the runner-up of `match_margin` (0.015); both live under `[profiles]` in `config.toml`. Only clear frames count (head within 20°, eyes open, mouth closed).
+- **Recalibrate:** press `c`; the new baseline is stored for that driver.
 
 ```bash
-python -m driver_monitor.extract labels --root D:\YawDD --out data/labels.csv      # then open the CSV and fix wrong labels
-python -m driver_monitor.extract frames --root D:\YawDD --labels data/labels.csv   # videos -> data/frames/*.csv
-python -m driver_monitor.train --frames data/frames                                 # scores on people never seen in training, saves models/drowsiness_rf.pkl
+python -m driver_monitor.profiles list                    # all saved drivers
+python -m driver_monitor.profiles rename 1 "Anirban"
+python -m driver_monitor.profiles delete 2
+python -m driver_monitor.profiles compare                 # distances between every pair of drivers
+```
+
+The face signature is biometric data. It stays on your machine in `data/drivers.db`, which is git-ignored: never commit it. This is a shape match for personalising thresholds, not an authentication system.
+
+## Learned classifier (Random Forest)
+
+Besides the rule-based alerts, a Random Forest can be trained on public datasets (YawDD, UTA-RLDD) or your own recordings. It looks at 8-second windows (stride 4 s) of 20 features: eye openness relative to the driver's own baseline, PERCLOS, longest eye closure, mouth opening and yawn-like episodes, head pose spread and gaze spread. The forest is written in plain NumPy (`forest.py`), so there is no scikit-learn dependency and it also runs where compiled packages are blocked.
+
+```bash
+python -m driver_monitor.extract labels --root C:\Datasets\YawDD --out data/labels.csv     # then open the CSV and fix wrong labels
+python -m driver_monitor.extract frames --root C:\Datasets\YawDD --labels data/labels.csv  # videos -> data/frames/*.csv (resumable)
+python -m driver_monitor.train --frames data/frames        # scores on people never seen in training, saves models/drowsiness_rf.pkl
 python -m driver_monitor --rf models/drowsiness_rf.pkl
 ```
 
-The model can only add a WARN ("Yawn: model 91%", "Fatigue: model 87%"); the rule-based ALERTs stay the safety layer. `train` also scores the app's own thresholds on the same windows, so the two can be compared in the report.
+Our own clips go in the same way: name them `<n>-Normal.mp4`, `<n>-Yawning.mp4`, `<n>-Drowsy.mp4` (one number per person), run `extract labels` on that folder, change `skip` to `drowsy` on the Drowsy rows, then `extract frames --out data/frames` and train again. Every person needs a Normal clip, because the per-driver baseline is learned from it.
+
+The model can only add a WARN ("Yawn: model 91%", "Fatigue: model 87%"); the rule-based ALERTs stay the safety layer. `train` also scores the app's own thresholds on the same windows, so the two can be compared in the report. Saved models are Python pickles: only load files you trained yourself.
+
+### Results so far (YawDD, 90 people, 1473 windows)
+
+Evaluation holds out whole people, so every score is on drivers the model never saw.
+
+| | Accuracy | Macro-F1 | Yawning recall |
+|---|---|---|---|
+| Always "alert" | 0.738 | | |
+| App's rules | 0.857 | 0.783 | 0.49 |
+| Random Forest | 0.907 | 0.872 | 0.74 |
+
+The forest finds more yawns than the fixed thresholds. Some of the remaining misses are label noise: a yawning video also contains seconds without a yawn.
+
+**Drowsy is not evaluated yet.** YawDD has no drowsy videos, and with our own drowsy clips from a single person the held-out score for that class is meaningless (0.00). It needs drowsy recordings from at least 3 to 5 people, or UTA-RLDD.
+
+### Data and credit
+
+YawDD: S. Abtahi, M. Omidyeganeh, S. Shirmohammadi and B. Hariri, "YawDD: A Yawning Detection Dataset", ACM Multimedia Systems Conference (MMSys), 2014 (CC BY 4.0). The dataset is acted, not real driving, and its participants are not to be shown in public material unless they agreed (see the dataset's participant tables). Datasets, videos, frame CSVs and trained models are not in this repository (`data/`, `models/` and `*.mp4` are git-ignored). Each person downloads the data themselves, and anyone who records clips of a person needs that person's consent.
 
 ## Test reel
 
@@ -145,7 +187,9 @@ driver_monitor/
   evaluate.py       scenario checks against the sample clips
   reel.py           builds the demo reel and the annotated showcase video
   __main__.py       CLI
-tests/              unit tests for metrics, state logic, alert policy, and a Python-vs-JavaScript parity test (needs node)
+tests/              unit tests for metrics, state logic, alert policy, profiles, the Random Forest pipeline, and a Python-vs-JavaScript parity test (needs node)
+data/               driver database and extracted features (git-ignored, never commit)
+models/             downloaded MediaPipe models and the trained forest (git-ignored)
 web/                static browser demo (MediaPipe in the page), deployed on Vercel
 ```
 
@@ -154,7 +198,9 @@ web/                static browser demo (MediaPipe in the page), deployed on Ver
 - A single RGB camera struggles at night. An IR camera with IR illumination is the standard fix.
 - Heavy sunglasses hide the eyes, so EAR is unreliable. Head pose and yawning still work.
 - The stock COCO phone detector misses phones that are mostly hidden by a hand. A YOLO model fine-tuned on in-cabin images would do better.
-- Roadmap: a fine-tuned in-cabin detector (phone, cigarette, drinking), seatbelt check, and a Raspberry Pi / Jetson build.
+- Face recognition compares face shape only. Very different head angles, heavy occlusion or very similar faces can cause a miss or a wrong match; adjust `match_threshold` and `match_margin` in `config.toml`.
+- The Random Forest was trained on acted yawning videos (YawDD), and its drowsy class still lacks data from enough people.
+- Roadmap: drowsy recordings from more people (or UTA-RLDD), CLAHE for low light, Normal/Warning/Critical tiers, a fine-tuned in-cabin detector (phone, cigarette, drinking), seatbelt check, and a Raspberry Pi / Jetson build.
 
 This is a learning and portfolio project, not a certified safety system.
 
