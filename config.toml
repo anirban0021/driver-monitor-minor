@@ -53,6 +53,10 @@ id_pose_deg = 20.0          # only frames with the head within this many degrees
 id_jaw_max = 0.25           # ... mouth (nearly) closed ...
 id_blink_max = 0.5          # ... eyes open
 
+[model]                     # learned Random Forest, used with --rf
+rf_min_prob = 0.7           # the model must be at least this sure before it adds a WARN
+rf_every_s = 1.0            # ask the model this often
+
 [phone]
 phone_s = 1.0              # phone near the face this long -> ALERT
 phone_down_s = 1.0          # phone in view while looking down -> ALERT

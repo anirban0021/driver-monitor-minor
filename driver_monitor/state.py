@@ -88,6 +88,10 @@ class Config:
     id_jaw_max: float = 0.25         # ... the mouth (nearly) closed ...
     id_blink_max: float = 0.5        # ... and the eyes open
 
+    # Learned classifier (classifier.py, only when --rf is given)
+    rf_min_prob: float = 0.7         # the model must be at least this sure before it adds a WARN
+    rf_every_s: float = 1.0          # ask the model this often
+
     @classmethod
     def load(cls, path: Path | None) -> Config:
         if path is None or not Path(path).exists():

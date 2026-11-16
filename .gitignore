@@ -15,3 +15,4 @@ models/*.pt
 # Saved driver faces are biometric data: never commit them
 data/
 *.db
+models/

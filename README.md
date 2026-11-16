@@ -78,6 +78,19 @@ The HUD shows each live signal with its threshold marker. Watch where your value
 
 `--log` writes one JSON line per state change, for example `{"t": 42.1, "level": "ALERT", "reasons": ["Eyes closed 1.3s"]}`.
 
+## Learned classifier (Random Forest)
+
+Besides the rule-based alerts, a Random Forest can be trained on public datasets (YawDD, UTA-RLDD) or your own recordings. It looks at 8-second windows of EAR, MAR, jaw opening and head pose, and its eye openness is relative to each driver's own baseline.
+
+```bash
+python -m driver_monitor.extract labels --root D:\YawDD --out data/labels.csv      # then open the CSV and fix wrong labels
+python -m driver_monitor.extract frames --root D:\YawDD --labels data/labels.csv   # videos -> data/frames/*.csv
+python -m driver_monitor.train --frames data/frames                                 # scores on people never seen in training, saves models/drowsiness_rf.pkl
+python -m driver_monitor --rf models/drowsiness_rf.pkl
+```
+
+The model can only add a WARN ("Yawn: model 91%", "Fatigue: model 87%"); the rule-based ALERTs stay the safety layer. `train` also scores the app's own thresholds on the same windows, so the two can be compared in the report.
+
 ## Test reel
 
 `samples/` holds seven AI-generated scenarios: three normal-driving clips that must stay quiet (calm driving, talking and singing, a mirror and shoulder check) and four that must alert (phone use, repeated yawning, microsleep, looking away). The real phone and hand detectors run on every clip, in `evaluate` and in the reel, and looking down at a phone is not mistaken for closed eyes. All were made with Veo in Gemini from one reference image, [`samples/driver_reference.jpg`](samples/driver_reference.jpg), used as the opening frame, so the same driver appears in every clip. Generate new scenarios from that image to keep the reel consistent.
@@ -119,6 +132,12 @@ driver_monitor/
   detector.py       MediaPipe FaceLandmarker wrapper (landmarks + blendshapes)
   phone.py          phone detector + hand landmarks on a background thread
   state.py          temporal logic, calibration, alert levels
+  profiles.py       per-driver face recognition and the driver database (SQLite)
+  features.py       window features shared by training and live use
+  extract.py        dataset videos -> per-frame feature CSVs
+  train.py          trains and scores the Random Forest
+  forest.py         the Random Forest itself, in plain NumPy
+  classifier.py     runs the trained model live (--rf)
   hud.py            overlay rendering, alert banner and border flash
   alerts.py         spoken phrase and banner text per reason, and when to repeat them
   alarm.py          spoken alerts on a background thread: voice clips, system TTS, then beeps

@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--db", type=Path, default=DEFAULT_DB, help="driver database (default: data/drivers.db)")
     p.add_argument("--name", help="name for a new driver when one is enrolled (default: Driver N)")
     p.add_argument("--no-recognition", action="store_true", help="skip driver recognition and always calibrate from scratch")
+    p.add_argument("--rf", type=Path, help="trained Random Forest (.pkl): adds a WARN when it is sure of yawning or fatigue")
     p.add_argument("--recalibrate-at", default="", metavar="T1,T2",
                    help="seconds at which to recalibrate, e.g. the cuts in a spliced test reel")
     return p.parse_args()
@@ -71,6 +72,11 @@ def main() -> None:
     store = None if args.no_recognition else ProfileStore(args.db)
     ident = None if store is None else Identifier(store, cfg, name=args.name)
     who = None
+    rf = None
+    if args.rf:
+        from .classifier import ModelAlert  # only needed (and imported) with --rf
+
+        rf = ModelAlert(args.rf, cfg)
     watcher = NullWatcher() if args.phone == "off" else PhoneWatcher(args.phone)
     writer = None
     log = args.log.open("a", encoding="utf-8") if args.log else None
@@ -127,6 +133,8 @@ def main() -> None:
                         if log:
                             log.write(json.dumps({"t": round(t, 2), "level": "INFO", "reasons": [msg], "driver_id": who.driver.id,
                                                   "distance": who.distance}) + "\n")
+                if rf is not None:
+                    rf.apply(status, t, f, state.baseline_ear)   # may add a WARN; never lowers an ALERT
                 cue = alarm.update(status.reasons, t, urgent=status.level == Level.ALERT, yawns=status.yawns)
                 if cue is not None:
                     said.append((t, cue.phrase))
