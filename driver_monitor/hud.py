@@ -296,6 +296,23 @@ def _identity_badge(img: np.ndarray, who: IdentityStatus, enroll_s: float, k: fl
     draw_text(img, items)
 
 
+def describe_model(pred, min_prob: float) -> tuple[str, bool]:
+    """Text for the model chip and whether it is 'hot' (the model is sure of yawning or fatigue)."""
+    if pred is None:
+        return "Model: collecting data...", False
+    hot = pred.label in ("yawning", "drowsy") and pred.prob >= min_prob
+    return f"Model: {pred.label} {round(pred.prob * 100)}%", hot
+
+
+def _model_chip(img: np.ndarray, text: str, hot: bool, k: float) -> None:
+    """Top left, under the identity badge: what the Random Forest currently thinks (always visible with --rf)."""
+    px, pad = round(14 * k), round(14 * k)
+    bw, bh = int(pad * 2 + text_width(text, px, MEDIUM)), round(38 * k)
+    x0, y0 = round(20 * k), round(100 * k)
+    _rounded_blend(img, x0, y0, x0 + bw, y0 + bh, round(10 * k), PANEL, 0.74)
+    draw_text(img, [(x0 + pad, y0 + bh // 2 + px // 3, text, px, MEDIUM, WARN if hot else FG, "l")])
+
+
 def _caption(img: np.ndarray, msg: str, k: float) -> None:
     """A small plain-text note, top left (used to say the demo compresses a time window)."""
     px, pad = round(14 * k), round(14 * k)
@@ -307,7 +324,8 @@ def _caption(img: np.ndarray, msg: str, k: float) -> None:
 
 def draw(img: np.ndarray, face: FaceReading | None, s: Status, fps: float,
          phone: PhoneResult | None = None, cfg=None, t: float = 0.0,
-         phone_off: bool = False, note: str | None = None, who: IdentityStatus | None = None) -> np.ndarray:
+         phone_off: bool = False, note: str | None = None, who: IdentityStatus | None = None,
+         model_text: str | None = None, model_hot: bool = False) -> np.ndarray:
     from .state import Config
 
     cfg = cfg or Config()
@@ -332,4 +350,6 @@ def draw(img: np.ndarray, face: FaceReading | None, s: Status, fps: float,
         _identity_badge(img, who, cfg.enroll_s, k)
     elif note:
         _caption(img, note, k)
+    if model_text:
+        _model_chip(img, model_text, model_hot, k)
     return img

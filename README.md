@@ -115,6 +115,8 @@ python -m driver_monitor --rf models/drowsiness_rf.pkl
 
 Our own clips go in the same way: name them `<n>-Normal.mp4`, `<n>-Yawning.mp4`, `<n>-Drowsy.mp4` (one number per person), run `extract labels` on that folder, change `skip` to `drowsy` on the Drowsy rows, then `extract frames --out data/frames` and train again. Every person needs a Normal clip, because the per-driver baseline is learned from it.
 
+With `--rf` the HUD also shows a small chip under the driver badge with what the model currently thinks (for example `Model: yawning 83%`, orange when it is sure enough to warn). The rule-based alerts usually fire first on a real yawn, and the model never repeats a reason the rules already gave.
+
 The model can only add a WARN ("Yawn: model 91%", "Fatigue: model 87%"); the rule-based ALERTs stay the safety layer. `train` also scores the app's own thresholds on the same windows, so the two can be compared in the report. Saved models are Python pickles: only load files you trained yourself.
 
 ### Results so far (YawDD plus our own clips: 316 videos, 93 people, 1548 windows)

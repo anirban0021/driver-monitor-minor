@@ -34,3 +34,15 @@ def test_banner_detail_adds_information_or_is_absent():
     eyes.reasons = ["Eyes closed 1.4s"]
     assert hud._detail(eyes, "EYES CLOSED") == "Closed for 1.4 s"
     assert eyes.level in (Level.OK, Level.WARN, Level.ALERT)
+
+def test_model_chip_text_and_drawing():
+    from driver_monitor.classifier import Prediction
+
+    assert hud.describe_model(None, 0.7) == ("Model: collecting data...", False)
+    assert hud.describe_model(Prediction("alert", 0.96), 0.7) == ("Model: alert 96%", False)
+    assert hud.describe_model(Prediction("yawning", 0.83), 0.7) == ("Model: yawning 83%", True)
+    assert hud.describe_model(Prediction("yawning", 0.5), 0.7)[1] is False
+    img = np.full((720, 1280, 3), 128, np.uint8)
+    hud.draw(img, None, status_after(5), 30.0, cfg=Config(), model_text="Model: yawning 83%", model_hot=True)
+    chip = img[100:140, 20:300]
+    assert (chip != 128).any(), "the model chip is missing"

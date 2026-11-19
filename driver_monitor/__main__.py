@@ -145,8 +145,10 @@ def main() -> None:
                         if log:
                             log.write(json.dumps({"t": round(t, 2), "level": "INFO", "reasons": [msg], "driver_id": who.driver.id,
                                                   "distance": who.distance}) + "\n")
+                model_text, model_hot = None, False
                 if rf is not None:
-                    rf.apply(status, t, f, state.baseline_ear)   # may add a WARN; never lowers an ALERT
+                    pred = rf.apply(status, t, f, state.baseline_ear)   # may add a WARN; never lowers an ALERT
+                    model_text, model_hot = hud.describe_model(pred, cfg.rf_min_prob)
                 cue = alarm.update(status.reasons, t, urgent=status.level == Level.ALERT, yawns=status.yawns)
                 if cue is not None:
                     said.append((t, cue.phrase))
@@ -159,7 +161,8 @@ def main() -> None:
                 now = time.monotonic()
                 fps = 0.9 * fps + 0.1 * (1.0 / max(now - prev, 1e-6))
                 prev = now
-                hud.draw(frame, face, status, fps, phone if fresh else None, cfg, t, phone_off=bool(watcher.error), who=who)
+                hud.draw(frame, face, status, fps, phone if fresh else None, cfg, t, phone_off=bool(watcher.error), who=who,
+                         model_text=model_text, model_hot=model_hot)
 
                 if args.record:
                     if writer is None:
